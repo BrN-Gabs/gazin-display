@@ -1,0 +1,15 @@
+# ============================================================
+# GAZIN DISPLAY — segredos para DESENVOLVIMENTO LOCAL (wrangler dev)
+# Copie para .dev.vars (nunca versione). Em produção, use:
+#   npx wrangler secret put R2_ACCESS_KEY_ID
+#   npx wrangler secret put R2_SECRET_ACCESS_KEY
+# As demais configurações (não secretas) ficam em wrangler.jsonc → "vars".
+# ============================================================
+
+# Opcional no desenvolvimento: sem estas chaves, as partes do upload passam pelo Worker local.
+# Com elas (e R2_ACCOUNT_ID em wrangler.jsonc), o navegador envia direto ao bucket R2 REAL da conta.
+# R2_ACCESS_KEY_ID=
+# R2_SECRET_ACCESS_KEY=
+
+# Cookies Secure: auto (padrão) = somente quando acessado por https://
+# COOKIE_SECURE=auto

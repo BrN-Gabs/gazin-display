@@ -1,17 +1,17 @@
-import path from 'node:path';
 import type { TestProject } from 'vitest/node';
-import { startTestDatabase } from './test-db.js';
+import { startWorker } from './worker-server';
 
+/** Um Worker local (wrangler dev) para todos os testes de integração */
 export default async function setup(project: TestProject) {
-  const { pg, url } = await startTestDatabase({ port: 54330, name: 'gd_test', dir: path.resolve('.data/test-pg') });
-  project.provide('databaseUrl', url);
+  const w = await startWorker({ name: 'test-worker', port: 8788 });
+  project.provide('baseUrl', w.baseUrl);
   return async () => {
-    await pg.stop();
+    await w.stop();
   };
 }
 
 declare module 'vitest' {
   export interface ProvidedContext {
-    databaseUrl: string;
+    baseUrl: string;
   }
 }

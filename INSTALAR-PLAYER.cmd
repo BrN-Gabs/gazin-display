@@ -18,12 +18,13 @@ echo   GAZIN DISPLAY - Configurar o telao
 echo ==============================================
 echo Execute logado com o usuario que ficara no telao ^(sem "Executar como administrador"^).
 echo.
-echo Endereco do player:
-echo   - servidor nesta mesma maquina: apenas aperte Enter
-echo   - servidor em outra maquina:   http://IP-DO-SERVIDOR:3000/player
+echo Endereco do player na Cloudflare (HTTPS), por exemplo:
+echo   https://gazin-display.SEU-SUBDOMINIO.workers.dev/player
+echo Nao e preciso instalar Node.js nem servidor neste computador: so o navegador.
 echo.
-set "URL=http://localhost:3000/player"
-set /p "URL=Endereco [http://localhost:3000/player]: "
+set "URL="
+set /p "URL=Endereco: "
+if "%URL%"=="" ( echo [ERRO] Informe o endereco do player. & goto fim )
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" -Url "%URL%"
 if errorlevel 1 ( echo [ERRO] A configuracao nao foi concluida. Veja a mensagem acima. & goto fim )

@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { io, type Socket } from 'socket.io-client';
 import { queryClient } from './api';
 import { markProcessed } from './upload';
+import { GdSocket } from './socket';
 import { SocketEvents, type PlayerStateReport } from '../../shared/types';
 
 /**
@@ -10,7 +10,7 @@ import { SocketEvents, type PlayerStateReport } from '../../shared/types';
  */
 type LiveState = { state: PlayerStateReport; at: number };
 
-let socket: Socket | null = null;
+let socket: GdSocket | null = null;
 let connected = false;
 const live = new Map<string, LiveState>();
 const listeners = new Set<() => void>();
@@ -26,17 +26,13 @@ const subscribe = (l: () => void) => {
 
 export function connectRealtime() {
   if (socket) return;
-  socket = io('/admin', { path: '/socket.io', transports: ['websocket', 'polling'], reconnectionDelayMax: 10_000 });
+  socket = new GdSocket('/api/realtime/admin', { maxDelayMs: 10_000 });
   socket.on('connect', () => {
     connected = true;
     emit();
     void queryClient.invalidateQueries();
   });
   socket.on('disconnect', () => {
-    connected = false;
-    emit();
-  });
-  socket.on('connect_error', () => {
     connected = false;
     emit();
   });

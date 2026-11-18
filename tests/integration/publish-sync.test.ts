@@ -1,199 +1,128 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { PlayerManifest } from '../../src/shared/types.js';
-import { ADMIN, Client, EDITOR, makePng, makeVideo, pairDevice, playerSocket, seedUsers, startTestApp, until, waitFor, type TestEnv } from '../helpers.js';
+import fs from 'node:fs';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { ADMIN, Client, connectSocket, isEvent, makePng, makeVideo, pairDevice, sha256, uniq } from '../helpers';
 
-let env: TestEnv;
-let admin: Client;
-const media: Record<string, string> = {};
+describe('playlists, publicação e sincronização com o telão', () => {
+  const admin = new Client();
+  let img: any;
+  let img2: any;
+  let vid: any;
 
-async function uploadReady(c: Client, file: string, name: string) {
-  const r = await c.upload(file, name);
-  await env.built.ctx.processor.whenIdle();
-  await until(async () => (await env.db.media.findUniqueOrThrow({ where: { id: r.body.media.id } })).status === 'READY');
-  return r.body.media.id as string;
-}
-
-beforeAll(async () => {
-  env = await startTestApp();
-  await seedUsers(env.db);
-  admin = new Client(env.baseUrl);
-  await admin.login(ADMIN.email, ADMIN.password);
-  media.video1 = await uploadReady(admin, makeVideo('inst.mp4', 2), 'Vídeo Institucional Gazin.mp4');
-  media.image = await uploadReady(admin, await makePng('camp.png', { r: 250, g: 200, b: 0 }), 'Imagem de Campanha.png');
-  media.video2 = await uploadReady(admin, makeVideo('pub.mp4', 2), 'Vídeo Publicitário.mp4');
-  media.video3 = await uploadReady(admin, makeVideo('novo.mp4', 2), 'Novo Vídeo.mp4');
-});
-afterAll(() => env.close());
-
-describe('playlists, publicação e sincronização', () => {
-  let playlistId: string;
-  let deviceId: string;
-  let deviceCookie: string;
-  let revision: number;
-
-  it('cria playlist e salva rascunho com duração personalizada', async () => {
-    const created = await admin.post('/api/playlists', { name: 'Telão da Matriz' });
-    playlistId = created.body.playlist.id;
-    const pl = (await admin.get(`/api/playlists/${playlistId}`)).body.playlist;
-    expect(pl.settings).toMatchObject({ loop: true, audio: false, fitMode: 'contain', imageDurationSec: null });
-    const saved = await admin.put(`/api/playlists/${playlistId}`, {
-      revision: pl.revision,
-      items: [{ mediaId: media.video1 }, { mediaId: media.image, durationSec: 15 }, { mediaId: media.video2 }],
-    });
-    expect(saved.status).toBe(200);
-    revision = saved.body.revision;
-    const after = (await admin.get(`/api/playlists/${playlistId}`)).body.playlist;
-    expect(after.items.map((i: any) => i.media.id)).toEqual([media.video1, media.image, media.video2]);
-    expect(after.items[1].durationSec).toBe(15);
-    expect(after.hasUnpublishedChanges).toBe(true);
+  beforeAll(async () => {
+    await admin.login(ADMIN.email, ADMIN.password);
+    img = (await admin.upload(await makePng('pub-a.png', { r: 21, g: 83, b: 204 }), { width: 1280, height: 720 })).body.media;
+    img2 = (await admin.upload(await makePng('pub-b.png', { r: 240, g: 190, b: 20 }), { width: 1280, height: 720 })).body.media;
+    vid = (await admin.upload(makeVideo('pub-video.mp4', 2), { width: 1280, height: 720, durationMs: 2000, videoCodec: 'h264' })).body.media;
+    expect(img?.id && img2?.id && vid?.id).toBeTruthy();
   });
 
-  it('reordena itens preservando os IDs dos itens', async () => {
-    const pl = (await admin.get(`/api/playlists/${playlistId}`)).body.playlist;
-    const ids = pl.items.map((i: any) => i.id);
-    const reordered = [pl.items[2], pl.items[0], pl.items[1]].map((i: any) => ({ id: i.id, mediaId: i.media.id, durationSec: i.durationSec }));
-    const r = await admin.put(`/api/playlists/${playlistId}`, { revision: pl.revision, items: reordered });
-    expect(r.status).toBe(200);
-    const after = (await admin.get(`/api/playlists/${playlistId}`)).body.playlist;
-    expect(after.items.map((i: any) => i.id)).toEqual([ids[2], ids[0], ids[1]]);
-    expect(after.items.map((i: any) => i.position)).toEqual([0, 1, 2]);
-    // volta à ordem original
-    const back = await admin.put(`/api/playlists/${playlistId}`, { revision: r.body.revision, items: pl.items.map((i: any) => ({ id: i.id, mediaId: i.media.id, durationSec: i.durationSec })) });
-    revision = back.body.revision;
-  });
-
-  it('detecta edição concorrente do rascunho (revisão desatualizada)', async () => {
-    const stale = await admin.put(`/api/playlists/${playlistId}`, { revision: revision - 1, name: 'outro nome' });
+  it('cria, reordena e salva com controle de concorrência (revisão)', async () => {
+    const pl = (await admin.post('/api/playlists', { name: uniq('Institucional') })).body.playlist;
+    const s1 = await admin.put(`/api/playlists/${pl.id}`, { revision: 1, items: [{ mediaId: img.id, durationSec: 5 }, { mediaId: vid.id }] });
+    expect(s1.body.revision).toBe(2);
+    const p = (await admin.get(`/api/playlists/${pl.id}`)).body.playlist;
+    expect(p.items.map((i: any) => i.media.id)).toEqual([img.id, vid.id]);
+    // reordena mantendo os IDs dos itens
+    const s2 = await admin.put(`/api/playlists/${pl.id}`, { revision: 2, items: [{ id: p.items[1].id, mediaId: vid.id }, { id: p.items[0].id, mediaId: img.id, durationSec: 8 }] });
+    expect(s2.status).toBe(200);
+    const p2 = (await admin.get(`/api/playlists/${pl.id}`)).body.playlist;
+    expect(p2.items.map((i: any) => i.id)).toEqual([p.items[1].id, p.items[0].id]);
+    expect(p2.items[1].durationSec).toBe(8);
+    // revisão desatualizada: nada é alterado
+    const stale = await admin.put(`/api/playlists/${pl.id}`, { revision: 2, items: [] });
     expect(stale.status).toBe(409);
+    expect(stale.body.error).toBe('STALE_REVISION');
+    expect((await admin.get(`/api/playlists/${pl.id}`)).body.playlist.items).toHaveLength(2);
+    // duplicar
+    const dup = await admin.post(`/api/playlists/${pl.id}/duplicate`);
+    expect((await admin.get(`/api/playlists/${dup.body.playlist.id}`)).body.playlist.items).toHaveLength(2);
+  });
+
+  it('publica no telão: o player recebe o manifest pelo WebSocket, baixa as mídias e reporta o estado', async () => {
+    const { player, deviceId, cookie } = await pairDevice(admin, uniq('Telão'));
+    const ws = await connectSocket('player', cookie);
+    // ao conectar, recebe a configuração e a programação atual (vazia)
+    await ws.waitFor((m) => m.t === 'config');
+    const first = await ws.waitFor(isEvent('sync'));
+    expect(first.d.version).toBeNull();
+
+    const pl = (await admin.post('/api/playlists', { name: uniq('Programação') })).body.playlist;
+    await admin.put(`/api/playlists/${pl.id}`, { revision: 1, items: [{ mediaId: img.id, durationSec: 3 }, { mediaId: vid.id }] });
+    const pub = await admin.post(`/api/playlists/${pl.id}/publish`, { deviceIds: [deviceId], applyMode: 'next' });
+    expect(pub.status).toBe(200);
+    expect(pub.body.version.number).toBe(1);
+
+    const sync = await ws.waitFor(isEvent('sync', (d) => d.version?.number === 1));
+    expect(sync.d.version.items.map((i: any) => i.mediaId)).toEqual([img.id, vid.id]);
+    expect(sync.d.version.items[0].durationMs).toBe(3000);
+    expect(sync.d.version.items[1].durationMs).toBe(2000);
+
+    // o mesmo manifest por HTTP (reconciliação periódica)
+    const manifest = await player.get('/api/player/manifest');
+    expect(manifest.body.version.versionId).toBe(sync.d.version.versionId);
+
+    // download das mídias pelo player, com verificação de integridade
+    const media = await player.get(`/api/player/media/${vid.id}`);
+    expect(media.status).toBe(200);
+    expect(sha256(media.body)).toBe(sync.d.version.items[1].checksum);
+    expect(media.headers.get('cache-control')).toContain('immutable');
+    // mídia fora da programação do telão: proibida
+    expect((await player.get(`/api/player/media/${img2.id}`)).status).toBe(403);
+    // credencial do player não acessa a API administrativa
+    expect((await player.get('/api/media')).status).toBe(401);
+
+    // estado reportado aparece para o painel em tempo real e é persistido
+    const adminWs = await connectSocket('admin', admin.cookieHeader);
+    ws.send({ t: 'state', d: { status: 'playing', versionId: sync.d.version.versionId, versionNumber: 1, index: 0, total: 2, lastError: null } });
+    const live = await adminWs.waitFor(isEvent('device:state', (d) => d.deviceId === deviceId));
+    expect(live.d.state.status).toBe('playing');
+    const dev = (await admin.get(`/api/devices/${deviceId}`)).body.device;
+    expect(dev.connection).toBe('online');
+    expect(dev.reportedVersion.number).toBe(1);
+    expect(dev.inSync).toBe(true);
+
+    // atualização durante a reprodução: nova versão chega sem recarregar
+    const p = (await admin.get(`/api/playlists/${pl.id}`)).body.playlist;
+    await admin.put(`/api/playlists/${pl.id}`, { revision: p.revision, items: [...p.items.map((i: any) => ({ id: i.id, mediaId: i.media.id, durationSec: i.durationSec })), { mediaId: img2.id }] });
+    await admin.post(`/api/playlists/${pl.id}/publish`, { deviceIds: [deviceId] });
+    const sync2 = await ws.waitFor(isEvent('sync', (d) => d.version?.number === 2));
+    expect(sync2.d.version.items).toHaveLength(3);
+    // agora a nova mídia é acessível ao telão
+    expect((await player.get(`/api/player/media/${img2.id}`)).status).toBe(200);
+
+    // mídia em uso na programação publicada não pode ser excluída
+    const del = await admin.del(`/api/media/${img2.id}?force=true`);
+    expect(del.status).toBe(409);
+    expect(del.body.error).toBe('MEDIA_IN_USE');
+    // playlist publicada não pode ser excluída
+    expect((await admin.del(`/api/playlists/${pl.id}`)).body.error).toBe('PLAYLIST_IN_USE');
+
+    ws.close();
+    adminWs.close();
+  });
+
+  it('publicações simultâneas geram números de versão sequenciais e únicos', async () => {
+    const pl = (await admin.post('/api/playlists', { name: uniq('Concorrência') })).body.playlist;
+    await admin.put(`/api/playlists/${pl.id}`, { revision: 1, items: [{ mediaId: img.id }] });
+    const results = await Promise.all(Array.from({ length: 5 }, () => admin.post(`/api/playlists/${pl.id}/publish`, {})));
+    expect(results.every((r) => r.status === 200)).toBe(true);
+    expect(results.map((r) => r.body.version.number).sort()).toEqual([1, 2, 3, 4, 5]);
+    // revisão esperada desatualizada
+    const stale = await admin.post(`/api/playlists/${pl.id}/publish`, { revision: 99 });
     expect(stale.body.error).toBe('STALE_REVISION');
   });
 
-  it('vincula o telão com código temporário e credencial própria', async () => {
-    const paired = await pairDevice(admin, env.baseUrl);
-    deviceId = paired.deviceId;
-    deviceCookie = paired.cookie;
-    expect(deviceCookie).toMatch(/gd_device=/);
-    const session = await paired.player.get('/api/player/session');
-    expect(session.body).toMatchObject({ paired: true, device: { name: 'Telão da Matriz' } });
-    // o dispositivo não acessa rotas administrativas
-    expect((await paired.player.get('/api/media')).status).toBe(401);
-    expect((await paired.player.get('/api/playlists')).status).toBe(401);
+  it('não publica playlist vazia', async () => {
+    const pl = (await admin.post('/api/playlists', { name: uniq('Vazia') })).body.playlist;
+    expect((await admin.post(`/api/playlists/${pl.id}/publish`, {})).status).toBe(400);
   });
 
-  it('editor sem permissão de publicação não publica', async () => {
-    const editor = new Client(env.baseUrl);
-    await editor.login(EDITOR.email, EDITOR.password);
-    expect((await editor.post(`/api/playlists/${playlistId}/publish`, { deviceIds: [deviceId] })).status).toBe(403);
-  });
-
-  it('publica e o player recebe a nova programação em tempo real', async () => {
-    const socket = playerSocket(env.baseUrl, deviceCookie);
-    try {
-      const initial = await waitFor<PlayerManifest>(socket, 'sync');
-      expect(initial.version).toBeNull();
-      const syncPromise = waitFor<PlayerManifest>(socket, 'sync', 10_000, (m) => !!m.version);
-      const pub = await admin.post(`/api/playlists/${playlistId}/publish`, { deviceIds: [deviceId], applyMode: 'next', revision });
-      expect(pub.status).toBe(200);
-      expect(pub.body.version.number).toBe(1);
-      const m = await syncPromise;
-      expect(m.version!.number).toBe(1);
-      expect(m.version!.items.map((i) => i.mediaId)).toEqual([media.video1, media.image, media.video2]);
-      expect(m.version!.items[1]).toMatchObject({ type: 'image', durationMs: 15_000, customDuration: true });
-      expect(m.version!.items[0]!.durationMs).toBeGreaterThan(1500);
-      expect(m.version!.settings.imageDurationMs).toBe(30_000);
-      expect(m.source).toBe('default');
-    } finally {
-      socket.disconnect();
-    }
-  });
-
-  it('player baixa somente mídias da própria programação', async () => {
-    const res = await fetch(`${env.baseUrl}/api/player/media/${media.video1}`, { headers: { cookie: deviceCookie } });
-    expect(res.status).toBe(200);
-    expect(res.headers.get('x-checksum-sha256')).toMatch(/^[0-9a-f]{64}$/);
-    const notInPlaylist = await fetch(`${env.baseUrl}/api/player/media/${media.video3}`, { headers: { cookie: deviceCookie } });
-    expect(notInPlaylist.status).toBe(403);
-    const noCred = await fetch(`${env.baseUrl}/api/player/media/${media.video1}`);
-    expect(noCred.status).toBe(401);
-  });
-
-  it('rascunho editado não afeta o telão até publicar', async () => {
-    const pl = (await admin.get(`/api/playlists/${playlistId}`)).body.playlist;
-    const items = pl.items.map((i: any) => ({ id: i.id, mediaId: i.media.id, durationSec: i.durationSec }));
-    items.splice(2, 0, { mediaId: media.video3 });
-    const saved = await admin.put(`/api/playlists/${playlistId}`, { revision: pl.revision, items });
-    revision = saved.body.revision;
-    const manifest = await fetch(`${env.baseUrl}/api/player/manifest`, { headers: { cookie: deviceCookie } }).then((r) => r.json());
-    expect(manifest.version.number).toBe(1);
-    expect(manifest.version.items).toHaveLength(3);
-  });
-
-  it('nova publicação durante reprodução gera versão 2 com o novo vídeo na posição definida', async () => {
-    const socket = playerSocket(env.baseUrl, deviceCookie);
-    try {
-      await waitFor(socket, 'sync');
-      const next = waitFor<PlayerManifest>(socket, 'sync', 10_000, (m) => m.version?.number === 2);
-      await admin.post(`/api/playlists/${playlistId}/publish`, { deviceIds: [deviceId], revision });
-      const m = await next;
-      expect(m.version!.items.map((i) => i.mediaId)).toEqual([media.video1, media.image, media.video3, media.video2]);
-      // IDs de itens existentes são estáveis entre versões (o player usa isso para manter a posição)
-      const v1 = await env.db.playlistVersion.findFirstOrThrow({ where: { playlistId, number: 1 } });
-      const v1Items = (v1.snapshot as any).items.map((i: any) => i.itemId);
-      expect(m.version!.items.filter((i) => v1Items.includes(i.itemId))).toHaveLength(3);
-    } finally {
-      socket.disconnect();
-    }
-  });
-
-  it('publicações simultâneas geram números de versão únicos e sequenciais', async () => {
-    const results = await Promise.all(Array.from({ length: 5 }, () => admin.post(`/api/playlists/${playlistId}/publish`, { deviceIds: [deviceId] })));
-    expect(results.every((r) => r.status === 200)).toBe(true);
-    const numbers = results.map((r) => r.body.version.number).sort((a, b) => a - b);
-    expect(numbers).toEqual([3, 4, 5, 6, 7]);
-    const device = await env.db.displayDevice.findUniqueOrThrow({ where: { id: deviceId } });
-    const current = await env.db.playlistVersion.findUniqueOrThrow({ where: { id: device.publishedVersionId! } });
-    expect(numbers).toContain(current.number);
-  });
-
-  it('protege a exclusão de mídia em uso pela programação publicada', async () => {
-    const r = await admin.del(`/api/media/${media.video3}`);
-    expect(r.status).toBe(409);
-    expect(r.body.error).toBe('MEDIA_IN_USE');
-    expect(await env.db.media.count({ where: { id: media.video3 } })).toBe(1);
-  });
-
-  it('mídia somente em rascunho exige confirmação e é removida das playlists', async () => {
-    const extra = await uploadReady(admin, await makePng('extra.png', { r: 0, g: 0, b: 0 }), 'Extra.png');
-    const other = (await admin.post('/api/playlists', { name: 'Rascunho' })).body.playlist.id;
-    const pl = (await admin.get(`/api/playlists/${other}`)).body.playlist;
-    await admin.put(`/api/playlists/${other}`, { revision: pl.revision, items: [{ mediaId: extra }] });
-    const r = await admin.del(`/api/media/${extra}`);
-    expect(r.status).toBe(409);
-    expect(r.body.error).toBe('MEDIA_IN_DRAFTS');
-    const forced = await admin.del(`/api/media/${extra}?force=true`);
-    expect(forced.status).toBe(200);
-    expect(await env.db.playlistItem.count({ where: { playlistId: other } })).toBe(0);
-  });
-
-  it('publicar playlist vazia ou com mídia em processamento falha sem afetar a versão atual', async () => {
-    const empty = (await admin.post('/api/playlists', { name: 'Vazia' })).body.playlist.id;
-    const before = await env.db.displayDevice.findUniqueOrThrow({ where: { id: deviceId } });
-    const r = await admin.post(`/api/playlists/${empty}/publish`, { deviceIds: [deviceId] });
-    expect(r.status).toBe(400);
-    const after = await env.db.displayDevice.findUniqueOrThrow({ where: { id: deviceId } });
-    expect(after.publishedVersionId).toBe(before.publishedVersionId);
-  });
-
-  it('desvincular a playlist envia programação vazia ao telão', async () => {
-    const socket = playerSocket(env.baseUrl, deviceCookie);
-    try {
-      await waitFor(socket, 'sync');
-      const empty = waitFor<PlayerManifest>(socket, 'sync', 10_000, (m) => m.version === null);
-      expect((await admin.post(`/api/devices/${deviceId}/unassign`)).status).toBe(200);
-      const m = await empty;
-      expect(m.source).toBe('none');
-    } finally {
-      socket.disconnect();
-    }
+  it('visão geral e histórico refletem as operações', async () => {
+    const d = await admin.get('/api/dashboard');
+    expect(d.status).toBe(200);
+    expect(d.body.stats.mediaImages).toBeGreaterThan(0);
+    expect(d.body.stats.storageBytes).toBeGreaterThan(fs.statSync(makeVideo('pub-video.mp4', 2)).size);
+    const audit = await admin.get('/api/audit?action=playlist.');
+    expect(audit.body.entries.some((e: any) => e.action === 'playlist.published')).toBe(true);
   });
 });

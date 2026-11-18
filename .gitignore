@@ -1,11 +1,14 @@
 node_modules
 dist
+.wrangler
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 .env
 .env.*
-!.env.example
-storage
+/storage
 .data
-src/generated
+migracao*.sql
 test-results
 playwright-report
 coverage

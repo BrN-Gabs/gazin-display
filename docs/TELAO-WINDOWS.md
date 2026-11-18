@@ -7,14 +7,14 @@ Este guia configura o computador conectado ao telão para:
 - reabrir o player sozinho se o navegador fechar;
 - não depender de clique manual.
 
-Ele usa o Chrome ou o Edge, que já vêm no Windows ou são fáceis de instalar.
+Ele usa o Chrome ou o Edge, que já vêm no Windows ou são fáceis de instalar. **Não é preciso instalar Node.js, banco de dados, Docker nem nenhum servidor neste computador**: o sistema roda na Cloudflare e o telão só abre uma página HTTPS.
 
 ## 1. Pré-requisitos
 
 - Windows 10/11 com **Google Chrome** ou **Microsoft Edge** atualizado.
 - Um usuário do Windows que fica **logado** no computador do telão. O ideal é um usuário local dedicado com logon automático (veja o passo 5).
-- O endereço do servidor acessível a partir desse computador (teste no navegador: `https://SEU-SERVIDOR/api/health` deve retornar `"status":"ok"`).
-- **HTTPS** no servidor. Sem ele, o navegador bloqueia o cache offline (service worker), e o telão só reproduz enquanto houver conexão. A exceção é `http://localhost`.
+- Acesso à internet e ao endereço do sistema na Cloudflare (teste no navegador: `https://gazin-display.SEU-SUBDOMINIO.workers.dev/api/health` deve retornar `"status":"ok"`). Neste guia, `SEU-SERVIDOR` é esse endereço.
+- O endereço da Cloudflare já é **HTTPS**, o que permite o cache offline do player (service worker). Se a rede usar proxy/firewall, libere HTTPS (443) e WebSocket para `*.workers.dev` (ou o domínio próprio).
 - Configure o Windows para **não suspender, não desligar a tela e não bloquear**: Configurações → Sistema → Energia → "Nunca". Desative também a proteção de tela.
 
 ## 2. Abrir o player pela primeira vez e vincular
@@ -93,8 +93,8 @@ Esse atalho **não** reabre o navegador se ele for fechado. Para isso, use o scr
 | Painel mostra **Reconectando** | Conexão instável. O telão continua tocando o que já está no cache. |
 | Telão mostra o **código de vinculação** | A credencial foi revogada/expirada ou o perfil do navegador foi apagado: vincule novamente. |
 | "Atualização pendente" no painel | O telão ainda está baixando os arquivos (veja o progresso em Controle remoto) ou faltou espaço em disco. O erro aparece no painel e no Histórico. |
-| Cache local "indisponível (requer HTTPS)" | O servidor está em HTTP: configure HTTPS (docs/PRODUCAO.md). |
-| Vídeo não toca | Prefira MP4 (H.264). O servidor converte formatos incompatíveis. Veja Histórico → Erros de reprodução. |
+| Cache local "indisponível (requer HTTPS)" | Abra o player pelo endereço `https://` da Cloudflare (CLOUDFLARE_DEPLOY.md). |
+| Vídeo não toca | Use MP4 (H.264) ou WebM. A versão em nuvem não converte formatos (MOV, MKV, HEVC são recusados no envio). Veja Histórico → Erros de reprodução. |
 | Precisa ver a tela do player com controles do navegador | Pare a tarefa agendada e abra `https://SEU-SERVIDOR/player` em uma janela normal. |
 
 O botão **Controle remoto → Recarregar player** recarrega a página do telão sem acesso remoto ao computador.

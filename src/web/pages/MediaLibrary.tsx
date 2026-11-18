@@ -53,9 +53,10 @@ export default function MediaLibrary() {
     // copia já: FileList é "vivo" e esvazia quando o input é limpo
     const files = fileList ? [...fileList] : [];
     if (!files.length) return;
-    await loadUploadConfig().catch(() => {});
+    const cfg = await loadUploadConfig(true).catch(() => null);
     const rejected = enqueueFiles(files, kind);
     for (const r of rejected) toast.error(`${r.name}: ${r.error}`);
+    if (cfg?.storage?.warn) toast.warning(`Armazenamento acima de 85% do limite (${Math.round((cfg.storage.usedBytes / cfg.storage.limitBytes) * 100)}%). Remova mídias sem uso ou aumente o limite em Configurações.`);
   };
 
   const onDrop = (e: React.DragEvent) => {

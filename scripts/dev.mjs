@@ -1,9 +1,15 @@
-// Desenvolvimento: sobe a API (tsx watch, porta 3000) e o Vite (porta 5173) juntos.
-// Acesse http://localhost:5173/admin. O banco deve estar rodando (npm run db:local ou Docker).
+// Desenvolvimento: sobe o Worker local (wrangler dev, porta 8787 — D1, R2 e Durable Object simulados)
+// e o Vite (porta 5173) com recarga automática. Acesse http://localhost:5173/admin.
+// Na primeira vez: npm run db:migrate:local && npm run create-admin -- --local
+import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 
+// o wrangler exige o diretório dos Static Assets; no desenvolvimento quem serve o painel é o Vite
+fs.mkdirSync('dist/web', { recursive: true });
+if (!fs.existsSync('dist/web/index.html')) fs.writeFileSync('dist/web/index.html', '<!doctype html><p>Use http://localhost:5173/admin (ou npm run build)</p>');
+
 const procs = [
-  ['api', ['run', 'dev:server']],
+  ['api', ['run', 'dev:worker']],
   ['web', ['run', 'dev:web']],
 ].map(([name, args]) => {
   const p = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', args, { stdio: ['inherit', 'pipe', 'pipe'], shell: process.platform === 'win32' });

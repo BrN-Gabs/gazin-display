@@ -5,7 +5,7 @@ import { KeyRound, MonitorPlay, Plus, Server, ShieldCheck, SlidersHorizontal, Us
 import { toast } from 'sonner';
 import { api, errorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { formatDateTime, relativeTime } from '../lib/format';
+import { formatBytes, formatDateTime, relativeTime } from '../lib/format';
 import { Alert, Badge, Button, Card, CardHeader, Field, Input, Loading, Modal, PageHeader, Segmented, Select, Switch, cn } from '../components/ui';
 
 interface GlobalSettings {
@@ -16,12 +16,15 @@ interface GlobalSettings {
   emptyBehavior: 'black' | 'standby';
   maxUploadMb: number;
   offlineAfterSec: number;
+  storageLimitGb: number;
 }
 interface SystemInfo {
   storageDriver: string;
   maxUploadMbEnv: number;
   chunkMb: number;
   ffmpeg: boolean;
+  directUpload: boolean;
+  storage: { usedBytes: number; reservedBytes: number; limitBytes: number; warn: boolean };
   timezone: string;
   sessionTtlHours: number;
   deviceTokenTtlDays: number;
@@ -125,6 +128,8 @@ function PlaybackSettings({ settings, readOnly }: { settings: GlobalSettings; re
 function SystemSettings({ settings, system, readOnly }: { settings: GlobalSettings; system: SystemInfo; readOnly: boolean }) {
   const [maxUploadMb, setMax] = useState(settings.maxUploadMb);
   const [offlineAfterSec, setOffline] = useState(settings.offlineAfterSec);
+  const [storageLimitGb, setStorageLimit] = useState(settings.storageLimitGb);
+  const usedPct = system.storage.limitBytes ? Math.round((system.storage.usedBytes / system.storage.limitBytes) * 100) : 0;
   const { save, saving } = useSaveSettings();
   return (
     <div className="grid max-w-5xl gap-6 lg:grid-cols-2">
@@ -134,12 +139,19 @@ function SystemSettings({ settings, system, readOnly }: { settings: GlobalSettin
           <Field label="Tamanho máximo por arquivo (MB)" hint={`Limite absoluto do servidor: ${system.maxUploadMbEnv.toLocaleString('pt-BR')} MB (MAX_UPLOAD_MB). Uploads são feitos em partes de ${system.chunkMb} MB.`}>
             <Input type="number" min={1} disabled={readOnly} className="w-48" value={maxUploadMb} onChange={(e) => setMax(Math.max(1, Number(e.target.value) || 1))} />
           </Field>
+          <Field
+            label="Limite de armazenamento das mídias (GB)"
+            hint={`Em uso: ${formatBytes(system.storage.usedBytes)} (${usedPct}%). Limite da aplicação: novos envios são recusados acima dele. Não substitui o controle de faturamento da Cloudflare.`}
+          >
+            <Input type="number" min={1} disabled={readOnly} className="w-48" value={storageLimitGb} onChange={(e) => setStorageLimit(Math.max(1, Number(e.target.value) || 1))} />
+          </Field>
+          {system.storage.warn && <Alert tone="amber">O armazenamento está acima de 85% do limite. Remova mídias sem uso ou aumente o limite.</Alert>}
           <Field label="Considerar telão offline após (segundos sem sinal)">
             <Input type="number" min={15} max={3600} disabled={readOnly} className="w-48" value={offlineAfterSec} onChange={(e) => setOffline(Math.max(15, Math.min(3600, Number(e.target.value) || 45)))} />
           </Field>
           {!readOnly && (
             <div className="flex justify-end">
-              <Button variant="primary" loading={saving} disabled={maxUploadMb === settings.maxUploadMb && offlineAfterSec === settings.offlineAfterSec} onClick={() => save({ maxUploadMb, offlineAfterSec })}>
+              <Button variant="primary" loading={saving} disabled={maxUploadMb === settings.maxUploadMb && offlineAfterSec === settings.offlineAfterSec && storageLimitGb === settings.storageLimitGb} onClick={() => save({ maxUploadMb, offlineAfterSec, storageLimitGb })}>
                 Salvar
               </Button>
             </div>
@@ -147,12 +159,14 @@ function SystemSettings({ settings, system, readOnly }: { settings: GlobalSettin
         </div>
       </Card>
       <Card>
-        <CardHeader title="Ambiente do servidor" description="Definido por variáveis de ambiente (.env)." />
+        <CardHeader title="Ambiente do servidor" description="Cloudflare Workers — definido em wrangler.jsonc e nos secrets do Worker." />
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-3 p-5 text-[13px]">
           <dt className="text-ink-500">Armazenamento</dt>
-          <dd className="font-medium text-ink-800">{system.storageDriver === 's3' ? 'S3 compatível' : 'Disco local persistente'}</dd>
+          <dd className="font-medium text-ink-800">{system.storageDriver === 'r2' ? 'Cloudflare R2' : system.storageDriver === 's3' ? 'S3 compatível' : 'Disco local persistente'}</dd>
+          <dt className="text-ink-500">Envio de arquivos</dt>
+          <dd>{system.directUpload ? <Badge tone="green">Direto ao R2 (URLs temporárias)</Badge> : <Badge tone="amber">Pelo Worker (credenciais do R2 não configuradas)</Badge>}</dd>
           <dt className="text-ink-500">Processamento de vídeo</dt>
-          <dd>{system.ffmpeg ? <Badge tone="green">FFmpeg disponível</Badge> : <Badge tone="red">FFmpeg ausente</Badge>}</dd>
+          <dd>{system.ffmpeg ? <Badge tone="green">FFmpeg disponível</Badge> : <Badge tone="neutral">No navegador (sem conversão: envie MP4 H.264 ou WebM)</Badge>}</dd>
           <dt className="text-ink-500">Fuso horário</dt>
           <dd className="text-ink-800">{system.timezone}</dd>
           <dt className="text-ink-500">Sessão administrativa</dt>

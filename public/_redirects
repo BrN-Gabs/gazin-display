@@ -1,0 +1,3 @@
+# Cloudflare Workers Static Assets
+/ /admin 302
+/player /player/ 301

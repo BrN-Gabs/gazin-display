@@ -1,6 +1,6 @@
-import { io, type Socket } from 'socket.io-client';
 import './player.css';
 import { PlaybackEngine } from './engine';
+import { GdSocket } from '../web/lib/socket';
 import { MediaCache, StorageInsufficientError, mediaPath, type PrepareProgress } from './cache';
 import {
   SocketEvents,
@@ -13,11 +13,12 @@ import {
   type VersionSnapshot,
 } from '../shared/types';
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '2.0.0';
 const STATE_KEY = 'gd.player.manifest';
 const POSITION_KEY = 'gd.player.position';
 const RECONCILE_MS = 60_000;
-const STATE_REPORT_MS = 5_000;
+/** Intervalo de envio do estado: 5 s com o painel aberto; o servidor informa 30 s quando não há ninguém acompanhando */
+let stateReportMs = 5_000;
 const bootAt = Date.now();
 
 // ---------------- persistência local (sobrevive a reinícios) ----------------
@@ -82,7 +83,7 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 class PlayerController {
   engine: PlaybackEngine;
   cache = new MediaCache();
-  socket: Socket | null = null;
+  socket: GdSocket | null = null;
   manifest: PlayerManifest | null = store.get<PlayerManifest>(STATE_KEY);
   /** versão já baixada e pronta, aguardando o próximo intervalo */
   pending: VersionSnapshot | null = null;
@@ -149,7 +150,7 @@ class PlayerController {
     // 2) Conecta ao servidor
     await this.checkSession();
     setInterval(() => void this.reconcile(), RECONCILE_MS);
-    setInterval(() => this.reportState(), STATE_REPORT_MS);
+    this.scheduleReport();
     window.addEventListener('online', () => void this.checkSession());
   }
 
@@ -254,7 +255,23 @@ class PlayerController {
 
   private connectSocket() {
     if (this.socket) return;
-    const socket = io('/player', { path: '/socket.io', transports: ['websocket', 'polling'], reconnection: true, reconnectionDelay: 1000, reconnectionDelayMax: 15_000, timeout: 10_000 });
+    let lastFailCheck = 0;
+    const socket = new GdSocket('/api/realtime/player', {
+      maxDelayMs: 15_000,
+      // a conexão não abriu: confere a credencial por HTTP (401 → volta para a tela de vinculação)
+      onConnectFailed: () => {
+        this.online = false;
+        if (Date.now() - lastFailCheck < 15_000) return;
+        lastFailCheck = Date.now();
+        void api('/api/player/session').then(({ status }) => {
+          if (status === 401 && this.socket === socket) {
+            socket.disconnect();
+            this.socket = null;
+            void this.startPairing();
+          }
+        }, () => {});
+      },
+    });
     this.socket = socket;
     socket.on('connect', () => {
       this.online = true;
@@ -263,12 +280,10 @@ class PlayerController {
     socket.on('disconnect', () => {
       this.online = false;
     });
-    socket.on('connect_error', (err) => {
-      this.online = false;
-      if (/não autorizado/i.test(err.message)) {
-        socket.disconnect();
-        this.socket = null;
-        void this.checkSession();
+    socket.on('config', (c: { reportMs?: number }) => {
+      if (typeof c.reportMs === 'number' && c.reportMs >= 1000 && c.reportMs !== stateReportMs) {
+        stateReportMs = c.reportMs;
+        this.scheduleReport();
       }
     });
     socket.on(SocketEvents.Sync, (m: PlayerManifest) => void this.handleManifest(m));
@@ -277,9 +292,7 @@ class PlayerController {
       this.socket = null;
       void this.startPairing();
     });
-    socket.on(SocketEvents.Command, (cmd: DeviceCommandMessage, ack: (r: CommandAck) => void) => {
-      void this.handleCommand(cmd).then(ack, (err) => ack({ ok: false, error: err instanceof Error ? err.message : String(err) }));
-    });
+    socket.onCommand((cmd: DeviceCommandMessage) => this.handleCommand(cmd));
   }
 
   /** Reconciliação periódica via HTTP: não depende de mensagens WebSocket (que podem ser perdidas) */
@@ -528,7 +541,13 @@ class PlayerController {
       void this.cache.estimate().then((e) => (this.lastEstimate = e));
       void this.cache.count().then((c) => (this.lastCount = c));
     }
-    if (this.socket?.connected) this.socket.emit(SocketEvents.State, this.state());
+    if (this.socket?.connected) this.socket.send({ t: 'state', d: this.state() });
+  }
+
+  private reportTimer: ReturnType<typeof setInterval> | null = null;
+  private scheduleReport() {
+    if (this.reportTimer) clearInterval(this.reportTimer);
+    this.reportTimer = setInterval(() => this.reportState(), stateReportMs);
   }
 
   private lastThrottled = 0;
@@ -540,7 +559,7 @@ class PlayerController {
   }
 
   private emitEvent(ev: PlayerEventMessage) {
-    if (this.socket?.connected) this.socket.emit(SocketEvents.PlayerEvent, ev);
+    if (this.socket?.connected) this.socket.send({ t: 'event', d: ev });
   }
 }
 

@@ -11,7 +11,7 @@ import { PreviewPlayer, snapshotToPreview } from '../components/PreviewPlayer';
 import type { DeviceConnection, PlayerManifest, PlayerStateReport } from '../../shared/types';
 
 interface DashboardData {
-  stats: { devicesOnline: number; devicesTotal: number; mediaImages: number; mediaVideos: number; playlists: number; storageBytes: number };
+  stats: { devicesOnline: number; devicesTotal: number; mediaImages: number; mediaVideos: number; playlists: number; storageBytes: number; storageLimitBytes?: number; storageWarn?: boolean };
   devices: Array<{
     id: string;
     name: string;
@@ -61,7 +61,18 @@ export default function Dashboard() {
         <StatCard icon={<MonitorPlay />} label="Telões conectados" value={`${data.stats.devicesOnline} de ${data.stats.devicesTotal}`} detail={data.stats.devicesTotal ? 'dispositivos ativos agora' : 'nenhum telão cadastrado'} tone="green" />
         <StatCard icon={<Images />} label="Mídias cadastradas" value={data.stats.mediaImages + data.stats.mediaVideos} detail={`${data.stats.mediaVideos} vídeo(s) · ${data.stats.mediaImages} imagem(ns)`} />
         <StatCard icon={<ListVideo />} label="Playlist ativa" value={active?.playlistName ?? '—'} detail={active ? `${active.itemCount} conteúdo(s) · versão ${active.number}` : 'nada publicado'} tone="violet" />
-        <StatCard icon={<HardDrive />} label="Armazenamento" value={formatBytes(data.stats.storageBytes)} detail="ocupado pelas mídias" tone="amber" />
+        <StatCard icon={<HardDrive />} label="Armazenamento" value={formatBytes(data.stats.storageBytes)}
+          detail={
+            data.stats.storageLimitBytes ? (
+              <span className={data.stats.storageWarn ? 'font-medium text-red-600' : undefined}>
+                {`${Math.round((data.stats.storageBytes / data.stats.storageLimitBytes) * 100)}% de ${formatBytes(data.stats.storageLimitBytes)}${data.stats.storageWarn ? ' · próximo do limite' : ''}`}
+              </span>
+            ) : (
+              'ocupado pelas mídias'
+            )
+          }
+          tone="amber"
+        />
       </div>
 
       {!device ? (

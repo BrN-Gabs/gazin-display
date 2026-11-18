@@ -6,6 +6,7 @@ import { Button, Progress, cn } from './ui';
 
 const LABEL: Record<UploadTask['status'], string> = {
   queued: 'Na fila',
+  preparing: 'Analisando arquivo',
   uploading: 'Enviando',
   finishing: 'Validando arquivo',
   processing: 'Processando (miniatura e metadados)',
@@ -19,7 +20,7 @@ export function UploadDock() {
   const tasks = useUploads();
   const [collapsed, setCollapsed] = useState(false);
   if (!tasks.length) return null;
-  const active = tasks.filter((t) => ['queued', 'uploading', 'finishing', 'processing'].includes(t.status)).length;
+  const active = tasks.filter((t) => ['queued', 'preparing', 'uploading', 'finishing', 'processing'].includes(t.status)).length;
   return (
     <div className="fixed right-4 bottom-4 z-40 w-[min(400px,calc(100vw-2rem))] animate-pop overflow-hidden rounded-xl border border-ink-200 bg-white shadow-xl">
       <div className="flex items-center justify-between gap-2 border-b border-ink-100 bg-ink-50/70 px-4 py-2.5">
@@ -61,10 +62,10 @@ export function UploadDock() {
                       {t.name}
                     </p>
                     <p className={cn('truncate text-xs', t.status === 'error' ? 'text-red-600' : 'text-ink-500')}>
-                      {t.status === 'error' ? t.error : t.status === 'uploading' ? `${formatBytes(t.sent)} de ${formatBytes(t.size)} · ${Math.floor(pct)}%` : `${LABEL[t.status]} · ${formatBytes(t.size)}`}
+                      {t.status === 'error' ? t.error : t.status === 'uploading' ? `${formatBytes(t.sent)} de ${formatBytes(t.size)} · ${Math.floor(pct)}%` : t.status === 'preparing' ? `${LABEL.preparing} · ${t.prepPct}%` : `${LABEL[t.status]} · ${formatBytes(t.size)}`}
                     </p>
                   </div>
-                  {['queued', 'uploading'].includes(t.status) && (
+                  {['queued', 'preparing', 'uploading'].includes(t.status) && (
                     <Button size="icon-sm" variant="ghost" title="Cancelar" onClick={() => cancelUpload(t.key)}>
                       <X />
                     </Button>

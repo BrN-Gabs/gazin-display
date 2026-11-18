@@ -11,7 +11,7 @@ import sharp from 'sharp';
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
 const require = createRequire(import.meta.url);
-const ADMIN = { email: 'admin@e2e.local', password: 'Senha-E2E-2026!' };
+import { ADMIN } from '../worker-server';
 const dir = path.resolve('.data/fixtures/e2e');
 
 async function fixtures() {

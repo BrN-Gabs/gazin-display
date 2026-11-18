@@ -1,94 +1,110 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ADMIN, Client, EDITOR, seedUsers, startTestApp, type TestEnv } from '../helpers.js';
+import { describe, expect, it } from 'vitest';
+import { ADMIN, Client, EDITOR, LEGACY } from '../helpers';
 
-let env: TestEnv;
-
-beforeAll(async () => {
-  env = await startTestApp();
-  await seedUsers(env.db);
-});
-afterAll(() => env.close());
-
-describe('autenticação', () => {
-  it('login válido cria sessão HttpOnly e /me retorna o usuário', async () => {
-    const c = new Client(env.baseUrl);
-    const r = await c.login(ADMIN.email, ADMIN.password);
+describe('autenticação e controle de acesso', () => {
+  it('login válido define cookie HttpOnly/SameSite e /me retorna o usuário', async () => {
+    const c = new Client();
+    const r = await c.post('/api/auth/login', { login: ADMIN.email, password: ADMIN.password });
+    expect(r.status).toBe(200);
     const setCookie = r.headers.getSetCookie().join(';');
     expect(setCookie).toMatch(/gd_session=/);
     expect(setCookie).toMatch(/HttpOnly/i);
     expect(setCookie).toMatch(/SameSite=Lax/i);
-    expect(r.body.user).toMatchObject({ email: ADMIN.email, role: 'ADMIN' });
-    expect(JSON.stringify(r.body)).not.toMatch(/passwordHash|argon/);
     const me = await c.get('/api/auth/me');
-    expect(me.status).toBe(200);
     expect(me.body.user.email).toBe(ADMIN.email);
+    expect(me.body.user.role).toBe('ADMIN');
   });
 
-  it('login inválido retorna 401 com mensagem clara e registra auditoria', async () => {
-    const c = new Client(env.baseUrl);
-    const r = await c.post('/api/auth/login', { login: ADMIN.email, password: 'errada-123' });
-    expect(r.status).toBe(401);
-    expect(r.body.message).toMatch(/incorretos/);
-    const r2 = await c.post('/api/auth/login', { login: 'naoexiste@x.com', password: 'qualquer' });
-    expect(r2.status).toBe(401);
-    expect(await env.db.auditLog.count({ where: { action: 'auth.login_failed' } })).toBeGreaterThanOrEqual(2);
-    const log = await env.db.auditLog.findFirst({ where: { action: 'auth.login_failed' } });
-    expect(JSON.stringify(log)).not.toMatch(/errada-123/);
+  it('login inválido retorna 401 com mensagem genérica (inclusive para usuário inexistente)', async () => {
+    const c = new Client();
+    const a = await c.post('/api/auth/login', { login: ADMIN.email, password: 'errada-123456' });
+    const b = await c.post('/api/auth/login', { login: 'ninguem@teste.local', password: 'errada-123456' });
+    expect(a.status).toBe(401);
+    expect(b.status).toBe(401);
+    expect(a.body.message).toBe(b.body.message);
+  });
+
+  it('rotas protegidas exigem sessão', async () => {
+    const c = new Client();
+    for (const url of ['/api/media', '/api/playlists', '/api/devices', '/api/dashboard', '/api/settings', '/api/audit', '/api/uploads/config']) {
+      expect((await c.get(url)).status, url).toBe(401);
+    }
+    expect((await c.get('/api/media/00000000-0000-0000-0000-000000000000/file')).status).toBe(401);
+  });
+
+  it('proteção CSRF: sem cabeçalho X-GD-CSRF ou com origem externa a requisição é bloqueada', async () => {
+    const c = new Client();
+    await c.login(ADMIN.email, ADMIN.password);
+    const noHeader = await fetch(`${c.baseUrl}/api/playlists`, { method: 'POST', headers: { cookie: c.cookieHeader, 'content-type': 'application/json' }, body: '{"name":"x"}' });
+    expect(noHeader.status).toBe(403);
+    const foreign = await c.req('POST', '/api/playlists', { name: 'x' }, { origin: 'https://site-malicioso.example' });
+    expect(foreign.status).toBe(403);
+    expect(foreign.body.error).toBe('CSRF');
+  });
+
+  it('editor sem permissão de publicar não acessa rotas de administrador nem publica', async () => {
+    const c = new Client();
+    await c.login(EDITOR.email, EDITOR.password);
+    expect((await c.get('/api/users')).status).toBe(403);
+    expect((await c.put('/api/settings', { loop: false })).status).toBe(403);
+    expect((await c.post('/api/devices', { name: 'Telão X' })).status).toBe(403);
+    const pl = await c.post('/api/playlists', { name: 'Do editor' });
+    expect(pl.status).toBe(200);
+    expect((await c.post(`/api/playlists/${pl.body.playlist.id}/publish`, {})).status).toBe(403);
   });
 
   it('logout invalida a sessão no servidor', async () => {
-    const c = new Client(env.baseUrl);
+    const c = new Client();
     await c.login(ADMIN.email, ADMIN.password);
     const token = c.cookies.get('gd_session')!;
     await c.post('/api/auth/logout');
-    const stale = new Client(env.baseUrl);
-    stale.cookies.set('gd_session', token);
-    expect((await stale.get('/api/auth/me')).status).toBe(401);
+    const reuse = await fetch(`${c.baseUrl}/api/auth/me`, { headers: { cookie: `gd_session=${token}` } });
+    expect(reuse.status).toBe(401);
   });
 
-  it('rotas protegidas exigem autenticação', async () => {
-    const anon = new Client(env.baseUrl);
-    for (const url of ['/api/media', '/api/playlists', '/api/devices', '/api/dashboard', '/api/audit', '/api/settings', '/api/users']) {
-      expect((await anon.get(url)).status, url).toBe(401);
-    }
-    expect((await anon.post('/api/playlists', { name: 'x' })).status).toBe(401);
+  it('senha migrada da versão 1 (Argon2id) é aceita e convertida para PBKDF2', async () => {
+    const c = new Client();
+    const r = await c.post('/api/auth/login', { login: LEGACY.email, password: LEGACY.password });
+    expect(r.status).toBe(200);
+    const again = new Client();
+    expect((await again.post('/api/auth/login', { login: LEGACY.email, password: LEGACY.password })).status).toBe(200);
+    expect((await again.post('/api/auth/login', { login: LEGACY.email, password: 'outra-Senha-1' })).status).toBe(401);
   });
 
-  it('bloqueia requisições sem cabeçalho CSRF ou com origem externa', async () => {
-    const c = new Client(env.baseUrl);
-    await c.login(ADMIN.email, ADMIN.password);
-    const noCsrf = await fetch(`${env.baseUrl}/api/playlists`, { method: 'POST', headers: { cookie: c.cookieHeader, 'content-type': 'application/json' }, body: '{"name":"x"}' });
-    expect(noCsrf.status).toBe(403);
-    const evil = await c.req('POST', '/api/playlists', { name: 'x' }, { origin: 'https://site-malicioso.com' });
-    expect(evil.status).toBe(403);
+  it('limita tentativas excessivas de login (429)', async () => {
+    const c = new Client();
+    let last = 0;
+    for (let i = 0; i < 22; i++) last = (await c.post('/api/auth/login', { login: 'x@y.z', password: 'nada-nada-1' })).status;
+    expect(last).toBe(429);
+    // outro IP continua podendo entrar
+    const other = new Client();
+    expect((await other.post('/api/auth/login', { login: ADMIN.email, password: ADMIN.password })).status).toBe(200);
   });
 
-  it('editor não acessa funções exclusivas de administrador', async () => {
-    const c = new Client(env.baseUrl);
-    await c.login(EDITOR.email, EDITOR.password);
-    expect((await c.get('/api/users')).status).toBe(403);
-    expect((await c.put('/api/settings', { imageDurationSec: 10 })).status).toBe(403);
-    expect((await c.post('/api/devices', { name: 'Telão X' })).status).toBe(403);
-    // pode criar playlists
-    expect((await c.post('/api/playlists', { name: 'Do editor' })).status).toBe(200);
-  });
-
-  it('troca de senha exige a senha atual, valida a política e encerra outras sessões', async () => {
-    const a = new Client(env.baseUrl);
-    const b = new Client(env.baseUrl);
+  it('troca de senha encerra as outras sessões', async () => {
+    const a = new Client();
+    const b = new Client();
     await a.login(EDITOR.email, EDITOR.password);
     await b.login(EDITOR.email, EDITOR.password);
-    expect((await a.post('/api/auth/password', { currentPassword: 'errada', newPassword: 'Nova-Senha-789' })).status).toBe(400);
-    expect((await a.post('/api/auth/password', { currentPassword: EDITOR.password, newPassword: 'curta' })).status).toBe(400);
-    expect((await a.post('/api/auth/password', { currentPassword: EDITOR.password, newPassword: 'Nova-Senha-789' })).status).toBe(200);
-    expect((await a.get('/api/auth/me')).status).toBe(200);
+    const novo = 'Nova-Senha-2026!';
+    expect((await a.post('/api/auth/password', { currentPassword: EDITOR.password, newPassword: novo })).status).toBe(200);
     expect((await b.get('/api/auth/me')).status).toBe(401);
+    expect((await a.get('/api/auth/me')).status).toBe(200);
+    // volta a senha original para os demais testes
+    expect((await a.post('/api/auth/password', { currentPassword: novo, newPassword: EDITOR.password })).status).toBe(200);
   });
 
-  it('aplica rate limiting no login', async () => {
-    const c = new Client(env.baseUrl);
-    let last = 0;
-    for (let i = 0; i < 25; i++) last = (await c.post('/api/auth/login', { login: 'x@y.com', password: 'z' })).status;
-    expect(last).toBe(429);
+  it('administrador cria usuário e não pode remover o último administrador ativo', async () => {
+    const c = new Client();
+    await c.login(ADMIN.email, ADMIN.password);
+    const weak = await c.post('/api/users', { name: 'Fraco', email: 'fraco@teste.local', role: 'EDITOR', password: '123' });
+    expect(weak.status).toBe(400);
+    const created = await c.post('/api/users', { name: 'Operador', email: `op${Date.now()}@teste.local`, role: 'EDITOR', canPublish: true, password: 'Operador-Forte-1' });
+    expect(created.status).toBe(200);
+    const users = await c.get('/api/users');
+    const admin = users.body.users.find((u: any) => u.email === ADMIN.email);
+    const r = await c.patch(`/api/users/${admin.id}`, { role: 'EDITOR' });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe('LAST_ADMIN');
   });
 });

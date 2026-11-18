@@ -4,7 +4,8 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
 const root = path.resolve(import.meta.dirname, 'src/web');
-const backend = process.env.BACKEND_URL ?? 'http://localhost:3000';
+// Em desenvolvimento, a API é o Worker local (`wrangler dev`, porta 8787)
+const backend = process.env.BACKEND_URL ?? 'http://127.0.0.1:8787';
 
 /** Em desenvolvimento: rotas SPA do painel, /player e o service worker */
 function devRoutes(): Plugin {
@@ -47,14 +48,14 @@ export default defineConfig({
     strictPort: true,
     fs: { allow: [path.resolve(import.meta.dirname, 'src')] },
     proxy: {
-      '/api': { target: backend, changeOrigin: false },
-      '/socket.io': { target: backend, ws: true, changeOrigin: false },
+      '/api': { target: backend, ws: true, changeOrigin: false },
     },
   },
   build: {
     outDir: path.resolve(import.meta.dirname, 'dist/web'),
     emptyOutDir: true,
-    sourcemap: true,
+    // sem sourcemaps públicos nos Static Assets
+    sourcemap: false,
     chunkSizeWarningLimit: 900,
     rollupOptions: {
       input: {

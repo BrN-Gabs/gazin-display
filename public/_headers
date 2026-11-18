@@ -1,0 +1,16 @@
+# Cabeçalhos de segurança do painel e do player (Cloudflare Workers Static Assets).
+# connect-src inclui o endpoint S3 do R2 para o envio direto das partes dos uploads.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: same-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Strict-Transport-Security: max-age=31536000
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws: wss: https://*.r2.cloudflarestorage.com; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; worker-src 'self'
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/player/sw.js
+  Cache-Control: no-cache
+  Service-Worker-Allowed: /player/
