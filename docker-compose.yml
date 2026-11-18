@@ -1,0 +1,46 @@
+# GAZIN DISPLAY — produção com Docker Compose
+#   1) cp .env.example .env  e ajuste POSTGRES_PASSWORD, PUBLIC_URL etc.
+#   2) docker compose up -d --build
+#   3) docker compose exec app node dist/server/scripts/create-admin.js
+# Coloque um proxy HTTPS (Caddy/Nginx/Traefik) à frente da porta 3000 — veja docs/PRODUCAO.md.
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gazin_display
+      POSTGRES_USER: gazin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gazin -d gazin_display"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://gazin:${POSTGRES_PASSWORD}@db:5432/gazin_display
+      STORAGE_DIR: /data/storage
+      EMBEDDED_DB: "false"
+      HOST: 0.0.0.0
+      PORT: 3000
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - media:/data/storage
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+volumes:
+  pgdata:
+  media:

@@ -1,0 +1,84 @@
+@import 'tailwindcss';
+
+/* Identidade visual: azul Gazin predominante, neutros limpos */
+@theme {
+  --font-sans: Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+
+  --color-brand-50: #eef4ff;
+  --color-brand-100: #dbe7ff;
+  --color-brand-200: #bdd3ff;
+  --color-brand-300: #8fb5ff;
+  --color-brand-400: #5a8dfb;
+  --color-brand-500: #2f6aeb;
+  --color-brand-600: #1553cc;
+  --color-brand-700: #1043a6;
+  --color-brand-800: #123a86;
+  --color-brand-900: #13326b;
+  --color-brand-950: #0b1d40;
+
+  --color-ink-50: #f6f8fb;
+  --color-ink-100: #eef1f6;
+  --color-ink-200: #dfe4ec;
+  --color-ink-300: #c4ccd9;
+  --color-ink-400: #94a0b4;
+  --color-ink-500: #6b778c;
+  --color-ink-600: #4f5a6e;
+  --color-ink-700: #3a4457;
+  --color-ink-800: #252d3d;
+  --color-ink-900: #151b28;
+
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.06);
+  --animate-fade-in: fade-in 160ms ease-out;
+  --animate-pop: pop 180ms ease-out;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes pop {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-ink-50 text-ink-900 antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  ::selection {
+    @apply bg-brand-200;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: var(--color-ink-300);
+  border-radius: 8px;
+}

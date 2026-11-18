@@ -1,0 +1,133 @@
+/* Player do telão: somente a mídia, tela inteira, fundo preto */
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  cursor: none;
+  user-select: none;
+  font-family: Inter, 'Segoe UI', system-ui, sans-serif;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  overflow: hidden;
+}
+
+.slot {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: #000;
+  transition: opacity 350ms ease;
+  will-change: opacity;
+}
+.slot.visible {
+  opacity: 1;
+}
+.slot img,
+.slot video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: none;
+  background: #000;
+}
+.slot.is-image img,
+.slot.is-video video {
+  display: block;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  color: #e8eefc;
+  text-align: center;
+}
+.overlay.hidden {
+  display: none;
+}
+.overlay.black {
+  background: #000;
+}
+.overlay.pairing,
+.overlay.standby {
+  background: radial-gradient(circle at 50% 40%, #12306a 0, #0a1a3d 45%, #050c1f 100%);
+}
+.overlay .brand {
+  font-weight: 800;
+  letter-spacing: 0.32em;
+  font-size: clamp(14px, 1.6vw, 28px);
+  color: #9cc0ff;
+  margin-bottom: 2.5vh;
+}
+.overlay h1 {
+  font-size: clamp(24px, 3.2vw, 56px);
+  margin: 0 0 1.5vh;
+  font-weight: 700;
+}
+.overlay p {
+  font-size: clamp(14px, 1.4vw, 26px);
+  margin: 0.8vh 0;
+}
+.overlay .muted {
+  color: #a9badb;
+}
+.overlay .small {
+  font-size: clamp(11px, 1vw, 18px);
+  color: #7f93ba;
+}
+.overlay .code {
+  margin: 4vh auto;
+  font-size: clamp(48px, 9vw, 180px);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+  border: 2px solid rgba(156, 192, 255, 0.35);
+  border-radius: 24px;
+  padding: 2vh 4vw;
+}
+.overlay.standby p {
+  color: #a9badb;
+}
+.overlay .spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #1f2a44;
+  border-top-color: #4b84ff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  opacity: 0.6;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.audio-hint {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 11;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+.audio-hint.hidden {
+  display: none;
+}
