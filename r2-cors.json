@@ -2,7 +2,7 @@
   "rules": [
     {
       "allowed": {
-        "origins": ["https://gazin-display.SEU-SUBDOMINIO.workers.dev"],
+        "origins": ["https://gazin-display.gazin.workers.dev"],
         "methods": ["PUT"],
         "headers": ["content-type"]
       },

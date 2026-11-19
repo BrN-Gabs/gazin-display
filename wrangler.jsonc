@@ -9,70 +9,84 @@
  * Antes do primeiro deploy, crie os recursos e preencha os IDs abaixo (veja CLOUDFLARE_DEPLOY.md, Parte B).
  */
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "gazin-display",
-  "main": "src/worker/index.ts",
-  "compatibility_date": "2026-11-01",
-  "compatibility_flags": ["nodejs_compat"],
-
-  // Painel e player (build do Vite). /api/* sempre passa pelo Worker.
-  "assets": {
-    "directory": "./dist/web",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "html_handling": "auto-trailing-slash",
-    "run_worker_first": ["/api/*"]
-  },
-
-  // Banco de dados (usuários, mídias, playlists, versões, telões, agendamentos, histórico)
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "gazin-display",
-      // Substitua pelo ID exibido por: npx wrangler d1 create gazin-display
-      "database_id": "00000000-0000-0000-0000-000000000000",
-      "migrations_dir": "migrations"
-    }
-  ],
-
-  // Arquivos de mídia (vídeos, imagens, miniaturas)
-  "r2_buckets": [
-    {
-      "binding": "MEDIA",
-      "bucket_name": "gazin-display-media"
-    }
-  ],
-
-  // Tempo real (painel e telões) com WebSocket Hibernation — disponível no plano gratuito (SQLite)
-  "durable_objects": {
-    "bindings": [{ "name": "REALTIME", "class_name": "RealtimeHub" }]
-  },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RealtimeHub"] }],
-
-  // Agendamentos (a cada minuto) e limpeza de sessões/uploads abandonados (a cada hora, no minuto 0)
-  "triggers": {
-    "crons": ["* * * * *"]
-  },
-
-  "observability": { "enabled": true },
-
-  // Variáveis não secretas. Segredos (R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY) via `wrangler secret put`.
-  "vars": {
-    // URL pública (validação de origem/CSRF). Ex.: https://gazin-display.SEU-SUBDOMINIO.workers.dev
-    "PUBLIC_URL": "",
-    // Upload direto ao R2 (URLs pré-assinadas). Exige R2_ACCOUNT_ID + secrets R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY.
-    // Sem eles, as partes passam pelo Worker (limite de 100 MB por requisição; cada parte tem UPLOAD_CHUNK_MB).
-    "R2_ACCOUNT_ID": "",
-    "R2_BUCKET_NAME": "gazin-display-media",
-    "SESSION_TTL_HOURS": "12",
-    "DEVICE_TOKEN_TTL_DAYS": "365",
-    // Limite absoluto por arquivo (MB) e tamanho de cada parte do upload (MB, mínimo 5 — exigência do R2)
-    "MAX_UPLOAD_MB": "20480",
-    "UPLOAD_CHUNK_MB": "16",
-    // Limite lógico inicial de armazenamento (GB). Pode ser ajustado em Configurações → Sistema.
-    "STORAGE_LIMIT_GB": "30",
-    // Iterações do PBKDF2-SHA256 para senhas. 50000 cabe no limite de 10 ms de CPU do plano gratuito.
-    // No Workers Paid, use 100000 (máximo do runtime): as senhas são atualizadas no próximo login de cada usuário.
-    "PASSWORD_ITERATIONS": "50000"
-  }
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "gazin-display",
+	"main": "src/worker/index.ts",
+	"compatibility_date": "2026-11-01",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	// Painel e player (build do Vite). /api/* sempre passa pelo Worker.
+	"assets": {
+		"directory": "./dist/web",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application",
+		"html_handling": "auto-trailing-slash",
+		"run_worker_first": [
+			"/api/*"
+		]
+	},
+	// Banco de dados (usuários, mídias, playlists, versões, telões, agendamentos, histórico)
+	"d1_databases": [
+		{
+			// O código usa env.DB — mantenha "DB" (o `wrangler d1 create` pode sugerir outro nome)
+			"binding": "DB",
+			"database_name": "gazin-display",
+			// Substitua pelo ID exibido por: npx wrangler d1 create gazin-display
+			"database_id": "e25c3316-17e9-48cb-9b3b-b363215f401a",
+			"migrations_dir": "migrations"
+		}
+	],
+	// Arquivos de mídia (vídeos, imagens, miniaturas)
+	"r2_buckets": [
+		{
+			"binding": "MEDIA",
+			"bucket_name": "gazin-display-media"
+		}
+	],
+	// Tempo real (painel e telões) com WebSocket Hibernation — disponível no plano gratuito (SQLite)
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "REALTIME",
+				"class_name": "RealtimeHub"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"RealtimeHub"
+			]
+		}
+	],
+	// Agendamentos (a cada minuto) e limpeza de sessões/uploads abandonados (a cada hora, no minuto 0)
+	"triggers": {
+		"crons": [
+			"* * * * *"
+		]
+	},
+	"observability": {
+		"enabled": true
+	},
+	// Variáveis não secretas. Segredos (R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY) via `wrangler secret put`.
+	"vars": {
+		// URL pública (validação de origem/CSRF). Ex.: https://gazin-display.SEU-SUBDOMINIO.workers.dev
+		"PUBLIC_URL": "https://gazin-display.gazin.workers.dev",
+		// Upload direto ao R2 (URLs pré-assinadas). Exige R2_ACCOUNT_ID + secrets R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY.
+		// Sem eles, as partes passam pelo Worker (limite de 100 MB por requisição; cada parte tem UPLOAD_CHUNK_MB).
+		"R2_ACCOUNT_ID": "9025a9ebd9f357c19dc11f1fbbd7e75f",
+		"R2_BUCKET_NAME": "gazin-display-media",
+		"SESSION_TTL_HOURS": "12",
+		"DEVICE_TOKEN_TTL_DAYS": "365",
+		// Limite absoluto por arquivo (MB) e tamanho de cada parte do upload (MB, mínimo 5 — exigência do R2)
+		"MAX_UPLOAD_MB": "20480",
+		"UPLOAD_CHUNK_MB": "16",
+		// Limite lógico inicial de armazenamento (GB). Pode ser ajustado em Configurações → Sistema.
+		"STORAGE_LIMIT_GB": "30",
+		// Iterações do PBKDF2-SHA256 para senhas. 50000 cabe no limite de 10 ms de CPU do plano gratuito.
+		// No Workers Paid, use 100000 (máximo do runtime): as senhas são atualizadas no próximo login de cada usuário.
+		"PASSWORD_ITERATIONS": "50000"
+	}
 }

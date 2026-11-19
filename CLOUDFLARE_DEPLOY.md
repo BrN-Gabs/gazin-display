@@ -58,7 +58,7 @@ npx wrangler whoami         # mostra o Account ID — anote
 npx wrangler d1 create gazin-display
 ```
 
-Copie o `database_id` exibido para `wrangler.jsonc` (campo `d1_databases[0].database_id`, hoje com zeros). Depois crie as tabelas:
+Copie o `database_id` exibido para `wrangler.jsonc` (campo `d1_databases[0].database_id`, hoje com zeros). Se o Wrangler oferecer para atualizar o arquivo sozinho, confira depois que o `"binding"` continua **`"DB"`**: ele costuma sugerir outro nome (ex.: `gazin_display`), e aí os comandos falham com "Couldn't find a D1 DB with the name or binding 'DB'". Depois crie as tabelas:
 
 ```powershell
 npm run db:migrate:remote
