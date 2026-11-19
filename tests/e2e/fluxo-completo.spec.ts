@@ -83,6 +83,20 @@ test('login: rejeita credenciais inválidas e entra com as válidas', async () =
   await expect(admin.getByText('Conectado', { exact: true })).toBeVisible();
 });
 
+test('formulário em modal: digitar em um campo de baixo não devolve o foco ao primeiro', async () => {
+  await admin.goto(new URL('/admin/settings?tab=users', admin.url()).toString());
+  await admin.getByRole('button', { name: 'Novo usuário' }).click();
+  const dialog = admin.getByRole('dialog');
+  await expect(dialog.getByLabel('Nome')).toBeFocused();
+  await dialog.getByLabel('E-mail').click();
+  await dialog.getByLabel('E-mail').pressSequentially('teste@gazin.com.br', { delay: 20 });
+  await expect(dialog.getByLabel('E-mail')).toHaveValue('teste@gazin.com.br');
+  await expect(dialog.getByLabel('E-mail')).toBeFocused();
+  await expect(dialog.getByLabel('Nome')).toHaveValue('');
+  await admin.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+});
+
 test('biblioteca: envia imagens e vídeo e processa', async () => {
   await admin.getByRole('link', { name: 'Biblioteca de Mídias' }).click();
   await admin.locator('input[type=file][accept^="image"]').setInputFiles([files.a, files.b, files.c]);

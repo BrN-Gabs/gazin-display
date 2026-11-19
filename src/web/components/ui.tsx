@@ -243,19 +243,24 @@ export function Kbd({ children }: { children: ReactNode }) {
 // ---------------- Modal ----------------
 export function Modal({ open, onClose, title, description, children, footer, size = 'md', closeOnBackdrop = true }: { open: boolean; onClose: () => void; title: ReactNode; description?: ReactNode; children: ReactNode; footer?: ReactNode; size?: 'sm' | 'md' | 'lg' | 'xl'; closeOnBackdrop?: boolean }) {
   const panel = useRef<HTMLDivElement>(null);
+  // onClose costuma ser uma função nova a cada render da página: guardá-la em ref evita que o efeito
+  // abaixo rode de novo a cada tecla digitada (o que devolvia o foco ao primeiro campo do formulário).
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current();
     document.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
-    setTimeout(() => panel.current?.querySelector<HTMLElement>('input,select,textarea,button[data-autofocus]')?.focus(), 30);
+    const t = setTimeout(() => panel.current?.querySelector<HTMLElement>('input,select,textarea,button[data-autofocus]')?.focus(), 30);
     return () => {
+      clearTimeout(t);
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = '';
       prev?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   const width = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-3xl', xl: 'max-w-5xl' }[size];
   return createPortal(
